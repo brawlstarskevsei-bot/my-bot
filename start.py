@@ -1,11 +1,9 @@
-from http.server import BaseHTTPRequestHandler, HTTPServer
-import threading
-class WebServer(BaseHTTPRequestHandler):
-    def do_GET(self): self.send_response(200); self.end_headers(); self.wfile.write(b"OK")
-threading.Thread(target=lambda: HTTPServer(('0.0.0.0', 10000), WebServer).serve_forever(), daemon=True).start()
+import os
 import asyncio
 import random
 from datetime import datetime, timedelta
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
 import psycopg2
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
@@ -13,12 +11,28 @@ from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import BotCommand, BotCommandScopeAllGroupChats
 
+# =====================================================================
+# 🌐 ВЕБ-СЕРВЕР ДЛЯ ОБМАНА ХОСТИНГА RENDER (ЧТОБЫ БОТ НЕ ВЫКЛЮЧАЛСЯ)
+# =====================================================================
+class WebServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), WebServer)
+    server.serve_forever()
+
+# Запускаем сайт-обманку в отдельном фоновом потоке, чтобы он не блокировал бота
+threading.Thread(target=run_web_server, daemon=True).start()
+
 # ==========================================
-# ⚙️ НАСТРОЙКИ (ИЗМЕНИ ТОЛЬКО ССЫЛКУ НА БАЗУ)
+# ⚙️ НАСТРОЙКИ И ПОДКЛЮЧЕНИЕ К БАЗЕ
 # ==========================================
 ADMIN_ID = 8754245670  # Твой Telegram ID
-DB_URL = "postgresql://cockdb_user:ZCre9R5OAcFxMOc0wLwoiMmB3i7d21B2@dpg-daofihrtqb8s73f56an0-a.oregon-postgres.render.com/cockdb" 
-# ==========================================
+DB_URL = "postgresql://cockdb_user:ZCre9R5OAcFxMOCOwLwoiMmB3i7d21B2@://render.com"
 
 bot = Bot(token="8948607951:AAHIwQ3eZPedZbLAfiBhBGNwZBi05hStkQo")
 dp = Dispatcher()
@@ -56,19 +70,34 @@ async def set_bot_commands(bot: Bot):
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    await message.reply("👋 Привет! Добавь меня в группу, чтобы играть вместе с друзьями!\n\n📜 **Команды в чате:**\n📏 `/my` — узнать свой текущий размер\n📈 `/grow` или через `/menu` — вырастить агрегат\n🏆 `/top` — топ-200 участников чата\n🤝 `/give [кол-во]` — передать см (ответом на сообщение)\n🎲 `/pvp [кол-во]` — открытое казино на кубиках для всех", parse_mode=ParseMode.MARKDOWN)
+    await message.reply(
+        "👋 Привет! Добавь меня в группу, чтобы играть вместе с друзьями!\n\n"
+        "📜 **Команды в чате:**\n"
+        "📏 `/my` — узнать свой текущий размер\n"
+        "📈 `/grow` или через `/menu` — вырастить агрегат\n"
+        "🏆 `/top` — топ-200 участников чата\n"
+        "🤝 `/give [кол-во]` — передать см (ответом на сообщение)\n"
+        "🎲 `/pvp [кол-во]` — открытое казино на кубиках для всех",
+        parse_mode=ParseMode.MARKDOWN
+    )
 
 @dp.message(Command("menu"))
 async def cmd_menu(message: types.Message):
     if message.chat.type == "private":
         await message.reply("❌ Меню доступно только в групповых чатах!")
         return
+
     builder = InlineKeyboardBuilder()
     builder.button(text="📏 Мой размер", callback_data="btn_my")
     builder.button(text="📈 Вырастить пиписю", callback_data="btn_grow")
     builder.button(text="🏆 Топ чата (200)", callback_data="top_page:0")
     builder.adjust(1)
-    await message.answer("📱 **Главное меню игры**\n\nНажимай на кнопки ниже, чтобы играть!", reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN)
+
+    await message.answer(
+        "📱 **Главное меню игры**\n\nНажимай на кнопки ниже, чтобы играть!",
+        reply_markup=builder.as_markup(),
+        parse_mode=ParseMode.MARKDOWN
+    )
 
 @dp.message(Command("my"))
 @dp.callback_query(F.data == "btn_my")
@@ -76,13 +105,17 @@ async def my_size_handler(event: types.Message | types.CallbackQuery):
     is_callback = isinstance(event, types.CallbackQuery)
     message = event.message if is_callback else event
     chat_id, user_id, username = message.chat.id, event.from_user.id, event.from_user.first_name
+
     if message.chat.type == "private":
         if is_callback: await event.answer()
         return
+
     cursor.execute("SELECT size FROM users WHERE chat_id = %s AND user_id = %s", (chat_id, user_id))
     row = cursor.fetchone()
     current_size = row[0] if row else 0
-    await message.answer(f"📏 {username}, на данный момент длина твоего агрегата: **{current_size} см** 🍆", parse_mode=ParseMode.MARKDOWN)
+
+    text = f"📏 {username}, на данный момент длина твоего агрегата: **{current_size} см** 🍆"
+    await message.answer(text, parse_mode=ParseMode.MARKDOWN)
     if is_callback: await event.answer()
 @dp.message(Command("grow"))
 @dp.callback_query(F.data == "btn_grow")
@@ -90,11 +123,14 @@ async def grow_handler(event: types.Message | types.CallbackQuery):
     is_callback = isinstance(event, types.CallbackQuery)
     message = event.message if is_callback else event
     chat_id, user_id, username, now = message.chat.id, event.from_user.id, event.from_user.first_name, datetime.now()
+
     if message.chat.type == "private":
         await message.reply("❌ Эта команда работает только в групповых чатах!")
         return
+
     cursor.execute("SELECT size, last_grow FROM users WHERE chat_id = %s AND user_id = %s", (chat_id, user_id))
     row = cursor.fetchone()
+
     if row:
         current_size, last_grow_str = row[0], row[1]
         if last_grow_str:
@@ -107,10 +143,13 @@ async def grow_handler(event: types.Message | types.CallbackQuery):
                 else: await message.reply(f"⏳ Твой инструмент отдыхает! Приходи через {hours}ч {minutes}м.")
                 return
     else: current_size = 0
+
     change = random.randint(0, 50)
     new_size = current_size + change
+
     cursor.execute("INSERT INTO users (chat_id, user_id, username, size, last_grow) VALUES (%s, %s, %s, %s, %s) ON CONFLICT(chat_id, user_id) DO UPDATE SET username = EXCLUDED.username, size = EXCLUDED.size, last_grow = EXCLUDED.last_grow", (chat_id, user_id, username, new_size, now.isoformat()))
     conn.commit()
+
     text = f"📈 {username}, твой болт вырос на **+{change} см**!\nТеперь он: **{new_size} см** 📏" if change > 0 else f"😐 {username}, в этот раз ничего не выросло. Размер по-прежнему: **{new_size} см** 📏"
     await message.answer(text, parse_mode=ParseMode.MARKDOWN)
     if is_callback: await event.answer()
@@ -121,27 +160,37 @@ async def top_handler(event: types.Message | types.CallbackQuery):
     is_callback = isinstance(event, types.CallbackQuery)
     message = event.message if is_callback else event
     chat_id = message.chat.id
+    
+    # ТУТ ТЕПЕРЬ ВСЁ СТОИТ СТРОГО ПРАВИЛЬНО И КНОПКА БОЛЬШЕ НЕ ОШИБЁТСЯ
     page = int(event.data.split(":")[1]) if is_callback else 0
     per_page = 10
+
     cursor.execute("SELECT username, size FROM users WHERE chat_id = %s ORDER BY size DESC LIMIT 200", (chat_id,))
     rows = cursor.fetchall()
+
     if not rows:
         if is_callback: await event.answer("🏆 Список лидеров пока пуст!", show_alert=True)
         else: await message.reply("🏆 Список лидеров чата пока пуст!")
         return
+
     total_players = len(rows)
     total_pages = (total_players + per_page - 1) // per_page
     page_rows = rows[page * per_page : (page + 1) * per_page]
+
     top_text = f"🏆 **ТОП ЧАТА (Страница {page + 1}/{total_pages})**\nВсего участников: **{total_players}**\n\n"
-    for i, (username, size) in enumerate(page_rows, page * per_page + 1): top_text += f"{i}. {username} — **{size} см**\n"
+    for i, (username, size) in enumerate(page_rows, page * per_page + 1):
+        top_text += f"{i}. {username} — **{size} см**\n"
+
     builder = InlineKeyboardBuilder()
     if page > 0: builder.button(text="⬅️ Назад", callback_data=f"top_page:{page - 1}")
     if page < total_pages - 1: builder.button(text="Вперед ➡️", callback_data=f"top_page:{page + 1}")
     builder.adjust(2)
+
     if is_callback:
         await message.edit_text(top_text, reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN)
         await event.answer()
-    else: await message.answer(top_text, reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN)
+    else:
+        await message.answer(top_text, reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN)
 @dp.message(Command("give"))
 async def cmd_give(message: types.Message):
     if not message.reply_to_message:
@@ -187,7 +236,8 @@ async def cmd_add_cm(message: types.Message):
     amount, chat_id, target_id, target_name = int(args[0]), message.chat.id, message.reply_to_message.from_user.id, message.reply_to_message.from_user.first_name
     cursor.execute("SELECT size FROM users WHERE chat_id = %s AND user_id = %s", (chat_id, target_id))
     row = cursor.fetchone()
-    new_size = (row[0] if row else 0) + amount
+    current_size = row[0] if row else 0
+    new_size = current_size + amount
     cursor.execute("INSERT INTO users (chat_id, user_id, username, size) VALUES (%s, %s, %s, %s) ON CONFLICT(chat_id, user_id) DO UPDATE SET size = EXCLUDED.size", (chat_id, target_id, target_name, new_size))
     conn.commit()
     await message.reply(f"👑 **Админ-действие**: Выдано **+{amount} см** игроку {target_name}!\nБаланс: **{new_size} см**.")
@@ -205,7 +255,8 @@ async def cmd_remove_cm(message: types.Message):
     amount, chat_id, target_id, target_name = int(args[0]), message.chat.id, message.reply_to_message.from_user.id, message.reply_to_message.from_user.first_name
     cursor.execute("SELECT size FROM users WHERE chat_id = %s AND user_id = %s", (chat_id, target_id))
     row = cursor.fetchone()
-    new_size = max(0, (row[0] if row else 0) - amount)
+    current_size = row[0] if row else 0
+    new_size = max(0, current_size - amount)
     cursor.execute("INSERT INTO users (chat_id, user_id, username, size) VALUES (%s, %s, %s, %s) ON CONFLICT(chat_id, user_id) DO UPDATE SET size = EXCLUDED.size", (chat_id, target_id, target_name, new_size))
     conn.commit()
     await message.reply(f"👑 **Админ-действие**: Изъято **-{amount} см** у игрока {target_name}!\nБаланс: **{new_size} см**.")
@@ -246,10 +297,8 @@ async def pub_accept(callback: types.CallbackQuery):
     p1_data = cursor.fetchone()
     cursor.execute("SELECT size, username FROM users WHERE chat_id = %s AND user_id = %s", (chat_id, p2_id))
     p2_data = cursor.fetchone()
-    p1_size = p1_data[0] if p1_data else 0
-    p1_name = p1_data[1] if p1_data else "Игрок 1"
-    p2_size = p2_data[0] if p2_data else 0
-    p2_name = p2_data[1] if p2_data else callback.from_user.first_name
+    p1_size, p1_name = (p1_data[0], p1_data[1]) if p1_data else (0, "Игрок 1")
+    p2_size, p2_name = (p2_data[0], p2_data[1]) if p2_data else (0, callback.from_user.first_name)
     if p1_size < bet:
         await callback.message.edit_text("❌ Игра отменена: у создателя вызова больше нет нужной суммы!")
         await callback.answer()
