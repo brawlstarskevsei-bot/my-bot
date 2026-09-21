@@ -32,7 +32,7 @@ threading.Thread(target=run_web_server, daemon=True).start()
 # ⚙️ НАСТРОЙКИ И ПОДКЛЮЧЕНИЕ К БАЗЕ
 # ==========================================
 ADMIN_ID = 8754245670  # Твой Telegram ID
-DB_URL = "postgresql://cockdb_user:ZCre9R5OAcFxMOCOwLwoiMmB3i7d21B2@://render.com"
+DB_URL = os.environ.get("DATABASE_URL")
 
 bot = Bot(token="8948607951:AAHIwQ3eZPedZbLAfiBhBGNwZBi05hStkQo")
 dp = Dispatcher()
